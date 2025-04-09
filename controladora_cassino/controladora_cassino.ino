@@ -5,284 +5,389 @@
 #define LED_PIN_3 12  // Fita da direita
 
 #define LED_COUNT_1 24  // Número de LEDs da Fita 1
-#define LED_COUNT_2 32  // Número de LEDs da Fita 2
+#define LED_COUNT_2 34  // Número de LEDs da Fita 2
 #define LED_COUNT_3 86  // Número de LEDs da Fita 3
 
 #define TOTAL_LEDS (LED_COUNT_1 + LED_COUNT_2 + LED_COUNT_3)
-
-#define Data_1 5  //-- Entrada digital
-#define Data_2 6  //-- Entrada digital
-#define Data_3 7  //-- Entrada digital
-#define Data_4 4  //-- Entrada digital
-
-int dataState_1 = 0;      //-- Estado da entrada 1 (LOW/HIGH)
-int dataState_2 = 0;      //-- Estado da entrada 2 (LOW/HIGH)
-int dataState_3 = 0;      //-- Estado da entrada 3 (LOW/HIGH)
-int dataState_4 = 0;      //-- Estado da entrada 4 (LOW/HIGH)
-int dataPrevState_1 = 0;  //-- Estado anterior da entrada 1
-int dataPrevState_2 = 0;  //-- Estado anterior da entrada 2
-int dataPrevState_3 = 0;  //-- Estado anterior da entrada 3
-int dataPrevState_4 = 0;  //-- Estado anterior da entrada 4
 
 Adafruit_NeoPixel strip_1(LED_COUNT_1, LED_PIN_1, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel strip_2(LED_COUNT_2, LED_PIN_2, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel strip_3(LED_COUNT_3, LED_PIN_3, NEO_GRB + NEO_KHZ800);
 
+int readSerial = 0;
+int efeitoAtual = 0;
+byte brilho = 130;
+bool esperaSerial = true;
+
+unsigned long ultimaTrocaRainbow = 0;
+int posicaoCor = 0;
+bool efeitoRainbowAtivo = false;
+bool efeitoDegrade = false;
+
+bool efeitoPiscarAtivo = false;
+bool estadoPiscar = false;
+unsigned long ultimaTrocaPiscar = 0;
+
+bool efeitoRainbowStroboAtivo = false;
+
+bool stroboAtivo = false;
+
+bool modoEfeitos = false;
+unsigned long lastEffectTime = 0;
+
 int estado = 0;
 int efeitoEtapa = 0;
-bool efeitoAtivo = false;
-unsigned long ultimaAtualizacao = 0;
-const int intervalo = 25;
-int ondaOffset = 0;
 
 void setup() {
+  Serial.begin(9600);
   strip_1.begin();  //-- Inicia a fita saida 1
-  strip_2.begin();  //-- Inicia a fita saida 2
+  strip_2.begin();  //-- Inicia a f0ita saida 2
   strip_3.begin();  //-- Inicia a fita saida 3
-
-  pinMode(Data_1, INPUT);  //-- Define o pino 1 digital como entrada (Usar ressitores de 10K para pull-down)
-  pinMode(Data_2, INPUT);  //-- Define o pino 2 digital como entrada (Usar ressitores de 10K para pull-down)
-  pinMode(Data_3, INPUT);  //-- Define o pino 3 digital como entrada (Usar ressitores de 10K para pull-down)
-  pinMode(Data_4, INPUT);  //-- Define o pino 4 digital como entrada (Usar ressitores de 10K para pull-down)
 }
 
 void loop() {
-  Actions();
-  ReadData();
-}
+  if (Serial.available() > 0) {
+    readSerial = Serial.read();
+    esperaSerial = false;
+  }
 
-void Actions() {
-  if (dataState_2 == HIGH) {
+  if (esperaSerial) {
+    orangeEffect();  // Mostra efeito laranja fixo
+    return;          // Sai do loop para não fazer mais nada
+  }
+
+  serialRead();
+
+  if (efeitoRainbowAtivo) {
+    efeitoRainbow();
+  }
+  if (efeitoRainbowStroboAtivo) {
+    efeitoRainbowStrobo();
+  }
+  if (efeitoPiscarAtivo) {
+    efeitoPiscar();
+  }
+  if (efeitoAtual == 9) {
+    efeitoRespiracaoDegrade();
+  }
+  if (efeitoAtual == 10) {
+    efeitoAleatorio();
+  }
+  if (efeitoAtual == 11) {
     efeitoRadar();
-  } else if (dataState_3 == HIGH) {
-    efeitoRainbowOnda();
-  } else if (dataState_4 == HIGH) {
-    efeitoRandom();
-  } else {
-    estado = 0;  // Reinicia o efeito do começo
-    efeitoEtapa = 0;
-    efeitoAtivo = false;
-    clearAll();  // Reseta a variável após o efeito ser executado
   }
-  if (dataState_1 == HIGH) {
-    efeitoStrobo();
-  } else {
-    strip_1.setBrightness(255);
-    strip_2.setBrightness(255);
-    strip_3.setBrightness(255);
-  }
-}
 
-void ReadData() {
-  dataState_1 = digitalRead(Data_1);
-  dataState_2 = digitalRead(Data_2);
-  dataState_3 = digitalRead(Data_3);
-  dataState_4 = digitalRead(Data_4);
-
-  if (dataState_1 != dataPrevState_1) {
-    dataPrevState_1 = dataState_1;
-  }
-  if (dataState_2 != dataPrevState_2) {
-    dataPrevState_2 = dataState_2;
-  }
-  if (dataState_3 != dataPrevState_3) {
-    dataPrevState_3 = dataState_3;
-  }
-  if (dataState_4 != dataPrevState_4) {
-    dataPrevState_4 = dataState_4;
-  }
-}
-
-void efeitoRadar() {
-  if (millis() - ultimaAtualizacao >= intervalo) {
-    ultimaAtualizacao = millis();
-
-    switch (estado) {
-      case 0:  // Fita 1 e Fita 3 sobem até metade (24 pixels)
-        if (efeitoEtapa < 24) {
-          // Acende em verde
-          strip_1.setPixelColor(LED_COUNT_1 - 1 - efeitoEtapa, strip_1.Color(0, 255, 0));
-          strip_3.setPixelColor(LED_COUNT_3 - 1 - efeitoEtapa, strip_3.Color(0, 255, 0));
-
-          strip_1.show();
-          strip_3.show();
-          efeitoEtapa++;
-        } else {
-          efeitoEtapa = 0;
-          estado++;  // Próxima etapa
-        }
-        break;
-
-      case 1:  // Fita 2 fecha dos dois lados
-        if (efeitoEtapa < LED_COUNT_2 / 2) {
-          // Acende em verde
-          strip_2.setPixelColor(efeitoEtapa, strip_2.Color(0, 255, 0));
-          strip_2.setPixelColor(LED_COUNT_2 - 1 - efeitoEtapa, strip_2.Color(0, 255, 0));
-
-          strip_2.show();
-          efeitoEtapa++;
-        } else {
-          efeitoEtapa = 0;
-          estado++;
-        }
-        break;
-
-      case 2:  // Fita 3 sobe mais 11 pixels e desce invertido
-        if (efeitoEtapa < 11) {
-          // Acende em verde
-          strip_3.setPixelColor(efeitoEtapa, strip_3.Color(0, 255, 0));
-          strip_3.setPixelColor(LED_COUNT_3 - 1 - (24 + efeitoEtapa), strip_3.Color(0, 255, 0));
-
-          strip_3.show();
-          efeitoEtapa++;
-        } else {
-          efeitoEtapa = 0;
-          estado++;
-        }
-        break;
-
-      case 3:  // Fita 3 fecha do pixel 11 até o 50 pelos dois lados
-        if (efeitoEtapa <= (50 - 11) / 2) {
-          // Acende em verde
-          strip_3.setPixelColor(11 + efeitoEtapa, strip_3.Color(0, 255, 0));
-          strip_3.setPixelColor(50 - efeitoEtapa, strip_3.Color(0, 255, 0));
-
-          strip_3.show();
-          efeitoEtapa++;
-        } else {
-          estado = 10;  // Muda para a fase 10 para acender em vermelho
-          efeitoEtapa = 0;
-        }
-        break;
-
-      case 10:  // Fase de acender em vermelho
-        if (efeitoEtapa < 24) {
-          // Acende em vermelho
-          strip_1.setPixelColor(LED_COUNT_1 - 1 - efeitoEtapa, strip_1.Color(0, 0, 255));
-          strip_3.setPixelColor(LED_COUNT_3 - 1 - efeitoEtapa, strip_3.Color(0, 0, 255));
-
-          strip_1.show();
-          strip_3.show();
-          efeitoEtapa++;
-        } else {
-          efeitoEtapa = 0;
-          estado++;  // Próxima etapa
-        }
-        break;
-
-      case 11:  // Fita 2 fecha dos dois lados em vermelho
-        if (efeitoEtapa < LED_COUNT_2 / 2) {
-          // Acende em vermelho
-          strip_2.setPixelColor(efeitoEtapa, strip_2.Color(0, 0, 255));
-          strip_2.setPixelColor(LED_COUNT_2 - 1 - efeitoEtapa, strip_2.Color(0, 0, 255));
-
-          strip_2.show();
-          efeitoEtapa++;
-        } else {
-          efeitoEtapa = 0;
-          estado++;
-        }
-        break;
-
-      case 12:  // Fita 3 sobe mais 11 pixels e desce invertido em vermelho
-        if (efeitoEtapa < 11) {
-          // Acende em vermelho
-          strip_3.setPixelColor(efeitoEtapa, strip_3.Color(0, 0, 255));
-          strip_3.setPixelColor(LED_COUNT_3 - 1 - (24 + efeitoEtapa), strip_3.Color(0, 0, 255));
-
-          strip_3.show();
-          efeitoEtapa++;
-        } else {
-          efeitoEtapa = 0;
-          estado++;
-        }
-        break;
-
-      case 13:  // Fita 3 fecha do pixel 11 até o 50 pelos dois lados em vermelho
-        if (efeitoEtapa <= (50 - 11) / 2) {
-          // Acende em vermelho
-          strip_3.setPixelColor(11 + efeitoEtapa, strip_3.Color(0, 0, 255));
-          strip_3.setPixelColor(50 - efeitoEtapa, strip_3.Color(0, 0, 255));
-
-          strip_3.show();
-          efeitoEtapa++;
-        } else {
-          estado = 20;  // Volta ao início
-          efeitoEtapa = 0;
-        }
-        break;
-
-        case 20:  // Fase de acender em vermelho
-        if (efeitoEtapa < 24) {
-          // Acende em vermelho
-          strip_1.setPixelColor(LED_COUNT_1 - 1 - efeitoEtapa, strip_1.Color(255, 0, 0));
-          strip_3.setPixelColor(LED_COUNT_3 - 1 - efeitoEtapa, strip_3.Color(255, 0, 0));
-
-          strip_1.show();
-          strip_3.show();
-          efeitoEtapa++;
-        } else {
-          efeitoEtapa = 0;
-          estado++;  // Próxima etapa
-        }
-        break;
-
-      case 21:  // Fita 2 fecha dos dois lados em vermelho
-        if (efeitoEtapa < LED_COUNT_2 / 2) {
-          // Acende em vermelho
-          strip_2.setPixelColor(efeitoEtapa, strip_2.Color(255, 0, 0));
-          strip_2.setPixelColor(LED_COUNT_2 - 1 - efeitoEtapa, strip_2.Color(255, 0, 0));
-
-          strip_2.show();
-          efeitoEtapa++;
-        } else {
-          efeitoEtapa = 0;
-          estado++;
-        }
-        break;
-
-      case 22:  // Fita 3 sobe mais 11 pixels e desce invertido em vermelho
-        if (efeitoEtapa < 11) {
-          // Acende em vermelho
-          strip_3.setPixelColor(efeitoEtapa, strip_3.Color(255, 0, 0));
-          strip_3.setPixelColor(LED_COUNT_3 - 1 - (24 + efeitoEtapa), strip_3.Color(255, 0, 0));
-
-          strip_3.show();
-          efeitoEtapa++;
-        } else {
-          efeitoEtapa = 0;
-          estado++;
-        }
-        break;
-
-      case 23:  // Fita 3 fecha do pixel 11 até o 50 pelos dois lados em vermelho
-        if (efeitoEtapa <= (50 - 11) / 2) {
-          // Acende em vermelho
-          strip_3.setPixelColor(11 + efeitoEtapa, strip_3.Color(255, 0, 0));
-          strip_3.setPixelColor(50 - efeitoEtapa, strip_3.Color(255, 0, 0));
-
-          strip_3.show();
-          efeitoEtapa++;
-        } else {
-          estado = 0;  // Volta ao início
-          efeitoEtapa = 0;
-        }
-        break;
+  if (modoEfeitos) {
+    unsigned long currentTime = millis();
+    if (currentTime - lastEffectTime >= 10000) {  // Muda a cada 10 segundos
+      lastEffectTime = currentTime;
+      efeitoAtual = (efeitoAtual + 1) % 10;  // Agora só alterna entre 3 efeitos
+    }
+    switch (efeitoAtual) {
+      case 0: greenEffect(); break;
+      case 1: efeitoAleatorio(); break;
+      case 2: blueEffect(); break;
+      case 3: efeitoRespiracaoDegrade(); break;
+      case 4: redEffect(); break;
+      case 5: efeitoRainbow(); break;
+      case 6: pinkEffect(); break;
+      case 7: orangeEffect(); break;
+      case 8: cianEffect(); break;
+      case 9: efeitoRadar(); break;
     }
   }
 }
 
-void efeitoRandom() {
-  if (millis() - ultimaAtualizacao >= 2) {
-    ultimaAtualizacao = millis();
-    if (efeitoEtapa < TOTAL_LEDS) {
-      strip_1.setPixelColor(random(0, 24), strip_1.Color(0, 0, random(0, 255)));
-      strip_2.setPixelColor(random(0, 32), strip_3.Color(0, 0, random(0, 255)));
-      strip_3.setPixelColor(random(0, 86), strip_3.Color(0, 0, random(0, 255)));
-      strip_1.setPixelColor(random(0, 24), strip_1.Color(255, 255, 255));
-      strip_2.setPixelColor(random(0, 32), strip_3.Color(255, 255, 255));
-      strip_3.setPixelColor(random(0, 86), strip_3.Color(255, 255, 255));
+void serialRead() {
+
+  if (readSerial == 'w') {
+    efeitoRainbowAtivo = false;
+    efeitoRainbowStroboAtivo = false;
+    efeitoPiscarAtivo = false;
+    modoEfeitos = false;
+    setBrilho(brilho);
+    whiteEffect();
+  }
+
+  if (readSerial == 'a') {
+    efeitoRainbowAtivo = false;
+    efeitoRainbowStroboAtivo = false;
+    efeitoPiscarAtivo = false;
+    modoEfeitos = false;
+    setBrilho(brilho);
+    redEffect();
+  }
+  if (readSerial == 'b') {
+    efeitoRainbowAtivo = false;
+    efeitoRainbowStroboAtivo = false;
+    efeitoPiscarAtivo = false;
+    modoEfeitos = false;
+    setBrilho(brilho);
+    greenEffect();
+  }
+  if (readSerial == 'c') {
+    efeitoRainbowAtivo = false;
+    efeitoRainbowStroboAtivo = false;
+    efeitoPiscarAtivo = false;
+    modoEfeitos = false;
+    setBrilho(brilho);
+    blueEffect();
+  }
+  if (readSerial == 'd') {
+    efeitoRainbowAtivo = false;
+    efeitoRainbowStroboAtivo = false;
+    efeitoPiscarAtivo = false;
+    modoEfeitos = false;
+    setBrilho(brilho);
+    cianEffect();
+  }
+  if (readSerial == 'e') {
+    efeitoRainbowAtivo = false;
+    efeitoRainbowStroboAtivo = false;
+    efeitoPiscarAtivo = false;
+    modoEfeitos = false;
+    setBrilho(brilho);
+    pinkEffect();
+  }
+  if (readSerial == 'f') {
+    efeitoRainbowAtivo = false;
+    efeitoRainbowStroboAtivo = false;
+    efeitoPiscarAtivo = false;
+    modoEfeitos = false;
+    setBrilho(brilho);
+    orangeEffect();
+  }
+  if (readSerial == 'g') {
+    efeitoRainbow();
+    efeitoRainbowAtivo = true;
+    efeitoRainbowStroboAtivo = false;
+    efeitoPiscarAtivo = false;
+    modoEfeitos = false;
+    setBrilho(brilho);
+  }
+  if (readSerial == 'h') {
+    efeitoRainbowAtivo = false;
+    efeitoRainbowStroboAtivo = false;
+    efeitoPiscarAtivo = false;
+    modoEfeitos = false;
+    stroboAtivo = false;
+    efeitoAtual = 9;
+  }
+  if (readSerial == 'i') {
+    efeitoRainbowAtivo = false;
+    efeitoRainbowStroboAtivo = false;
+    efeitoPiscarAtivo = false;
+    stroboAtivo = false;
+    modoEfeitos = false;
+    efeitoAtual = 10;
+  }
+  if (readSerial == 'j') {
+    efeitoRainbowAtivo = false;
+    efeitoRainbowStroboAtivo = false;
+    efeitoPiscarAtivo = false;
+    stroboAtivo = false;
+    modoEfeitos = false;
+    efeitoAtual = 11;
+  }
+  if (readSerial == 'l') {
+    efeitoRainbowAtivo = false;
+    efeitoRainbowStroboAtivo = false;
+    efeitoPiscarAtivo = false;
+    stroboAtivo = false;
+    modoEfeitos = true;
+  }
+  if (efeitoAtual == 7 && readSerial == 's') {
+    efeitoRainbowStrobo();
+    efeitoRainbowStroboAtivo = true;
+    efeitoRainbowAtivo = false;
+  }
+  if (readSerial == 's') {
+    efeitoPiscarAtivo = true;
+  }
+  if (readSerial == '1') {
+    brilho = 25;
+    setBrilho(brilho);
+  }
+  if (readSerial == '2') {
+    brilho = 40;
+    setBrilho(brilho);
+  }
+  if (readSerial == '3') {
+    brilho = 55;
+    setBrilho(brilho);
+  }
+  if (readSerial == '4') {
+    brilho = 70;
+    setBrilho(brilho);
+  }
+  if (readSerial == '5') {
+    brilho = 85;
+    setBrilho(brilho);
+  }
+  if (readSerial == '6') {
+    brilho = 90;
+    setBrilho(brilho);
+  }
+  if (readSerial == '7') {
+    brilho = 105;
+    setBrilho(brilho);
+  }
+  if (readSerial == '8') {
+    brilho = 120;
+    setBrilho(brilho);
+  }
+  if (efeitoAtual != 6 && readSerial == '9') {
+    brilho = 130;
+    setBrilho(brilho);
+  }
+
+  if (readSerial == '0') {
+    efeitoRainbowAtivo = false;
+    efeitoRainbowStroboAtivo = false;
+    efeitoPiscarAtivo = false;
+    modoEfeitos = false;
+    efeitoAtual = 0;
+    offEffect();
+  }
+}
+void greenEffect() {
+  efeitoAtual = 1;
+  preencherLed(0, 0, brilho);
+}
+void blueEffect() {
+  efeitoAtual = 2;
+  preencherLed(0, brilho, 0);
+}
+void redEffect() {
+  efeitoAtual = 3;
+  preencherLed(brilho, 0, 0);
+}
+void cianEffect() {
+  efeitoAtual = 4;
+  preencherLed(0, brilho, brilho);
+}
+void pinkEffect() {
+  efeitoAtual = 5;
+  preencherLed(brilho, brilho, 0);
+}
+void orangeEffect() {
+  efeitoAtual = 6;
+  preencherLed(brilho, 0, brilho / 10);
+}
+void whiteEffect() {
+  efeitoAtual = 16;
+  preencherLed(255, 255, 255);
+}
+void offEffect() {
+  preencherLed(0, 0, 0);
+}
+
+void efeitoPiscar() {
+  unsigned long intervalo = 25;  // tempo de piscada (ms)
+
+  if (millis() - ultimaTrocaPiscar >= intervalo) {
+    ultimaTrocaPiscar = millis();
+    estadoPiscar = !estadoPiscar;
+
+    if (estadoPiscar) {
+      setBrilho(10);  // Apaga os LEDs (brilho zero)
+    } else {
+      setBrilho(brilho);  // Volta ao brilho original
     }
+  }
+}
+
+void efeitoRespiracaoDegrade() {
+  efeitoAtual = 9;
+
+  static unsigned long tempoAnterior = 0;
+  static float brilhoF = 0;
+  static int direcao = 1;
+
+  static uint8_t corAtual[3] = { 130, 0, 0 };    // vermelho
+  static uint8_t corProxima[3] = { 0, 0, 130 };  // azul
+  static float tCor = 0.0;                       // interpolador de cor (0.0 a 1.0)
+
+  const float passoBrilho = 1;
+  const int brilhoMin = 10;
+  const int brilhoMax = brilho;
+
+  if (millis() - tempoAnterior > 5) {
+    tempoAnterior = millis();
+
+    brilhoF += direcao * passoBrilho;
+    if (brilhoF >= brilhoMax) {
+      brilhoF = brilhoMax;
+      direcao = -1;
+    } else if (brilhoF <= brilhoMin) {
+      brilhoF = brilhoMin;
+      direcao = 1;
+
+      // Avança para a próxima cor ao fim de um ciclo
+      corAtual[0] = corProxima[0];
+      corAtual[1] = corProxima[1];
+      corAtual[2] = corProxima[2];
+
+      // Escolhe nova cor aleatória (ou da lista se quiser)
+      uint8_t novasCores[6][3] = {
+        { 130, 0, 0 },    // vermelho
+        { 0, 130, 0 },    // verde
+        { 0, 0, 130 },    // azul
+        { 130, 130, 0 },  // amarelo
+        { 0, 130, 130 },  // ciano
+        { 130, 0, 130 }   // magenta
+      };
+      int index = random(0, 6);
+      corProxima[0] = novasCores[index][0];
+      corProxima[1] = novasCores[index][1];
+      corProxima[2] = novasCores[index][2];
+      tCor = 0.0;
+    }
+
+    // Atualiza interpolador de cor apenas ao subir o brilho
+    if (direcao == 1 && brilhoMax != brilhoMin) {
+      tCor = (brilhoF - brilhoMin) / (brilhoMax - brilhoMin);
+    }
+
+    // Interpola as cores
+    uint8_t r = (1 - tCor) * corAtual[0] + tCor * corProxima[0];
+    uint8_t g = (1 - tCor) * corAtual[1] + tCor * corProxima[1];
+    uint8_t b = (1 - tCor) * corAtual[2] + tCor * corProxima[2];
+
+    // Atualiza brilho e cor
+    byte brilhoAtual = (byte)brilhoF;
+    strip_1.setBrightness(brilhoAtual);
+    strip_2.setBrightness(brilhoAtual);
+    strip_3.setBrightness(brilhoAtual);
+
+    for (int i = 0; i < strip_1.numPixels(); i++) strip_1.setPixelColor(i, r, g, b);
+    for (int i = 0; i < strip_2.numPixels(); i++) strip_2.setPixelColor(i, r, g, b);
+    for (int i = 0; i < strip_3.numPixels(); i++) strip_3.setPixelColor(i, r, g, b);
+
+    strip_1.show();
+    strip_2.show();
+    strip_3.show();
+  }
+}
+
+void efeitoAleatorio() {
+  unsigned long tempoAnterior = 0;
+  efeitoAtual = 10;
+  for (int i = 0; i < strip_1.numPixels(); i++) strip_1.setPixelColor(i, 10, 10, 10);
+  for (int i = 0; i < strip_2.numPixels(); i++) strip_2.setPixelColor(i, 10, 10, 10);
+  for (int i = 0; i < strip_3.numPixels(); i++) strip_3.setPixelColor(i, 10, 10, 10);
+
+  if (millis() - tempoAnterior > 20) {
+    tempoAnterior = millis();
+
+    strip_1.setPixelColor(random(0, 24), 0, 0, 130);
+    strip_2.setPixelColor(random(0, 32), 0, 0, 130);
+    strip_3.setPixelColor(random(0, 86), 0, 0, 130);
+    strip_1.setPixelColor(random(0, 24), 0, 130, 0);
+    strip_2.setPixelColor(random(0, 32), 0, 130, 0);
+    strip_3.setPixelColor(random(0, 86), 0, 130, 0);
+    delay(50);
+
     strip_1.show();
     strip_2.show();
     strip_3.show();
@@ -293,81 +398,284 @@ unsigned long ultimaTroca3 = 0;
 bool ledsAcesos = true;
 
 void efeitoStrobo() {
-  // Strobo: alterna o brilho entre 0 e 255 de todos os LEDs
-  if (millis() - ultimaTroca3 >= 50) {
+  if (millis() - ultimaTroca3 > 20) {
     ultimaTroca3 = millis();
 
     if (ledsAcesos) {
-      // Apaga todos os LEDs (brilho 0)
       strip_1.setBrightness(10);
       strip_2.setBrightness(10);
       strip_3.setBrightness(10);
+      strip_1.show();
+      strip_2.show();
+      strip_3.show();
     } else {
-      // Acende todos os LEDs (brilho 255)
-      strip_1.setBrightness(255);
-      strip_2.setBrightness(255);
-      strip_3.setBrightness(255);
+      strip_1.setBrightness(brilho);
+      strip_2.setBrightness(brilho);
+      strip_3.setBrightness(brilho);
+      strip_1.show();
+      strip_2.show();
+      strip_3.show();
     }
-    strip_1.show();
-    strip_2.show();
-    strip_3.show();
 
-    // Alterna o estado de brilho (acende ou apaga)
     ledsAcesos = !ledsAcesos;
   }
 }
 
-void efeitoRainbowOnda() {
-  if (millis() - ultimaAtualizacao >= intervalo) {
-    ultimaAtualizacao = millis();
+void setBrilho(byte valor) {
+  strip_1.setBrightness(valor);
+  strip_2.setBrightness(valor);
+  strip_3.setBrightness(valor);
+  strip_1.show();
+  strip_2.show();
+  strip_3.show();
+}
 
-    // Cria a onda de cor para cada fita
-    ondaOffset++;  // Desloca a onda
+void efeitoRainbow() {
+  efeitoAtual = 7;
+  unsigned long intervalo = 5;
+  if (millis() - ultimaTrocaRainbow >= intervalo) {
+    ultimaTrocaRainbow = millis();
 
-    // Fita 1: aplica o efeito de onda
-    for (int i = 0; i < LED_COUNT_1; i++) {
-      uint32_t cor = Wheel((i + ondaOffset) % 255);  // Cor baseada na posição com offset
-      strip_1.setPixelColor(i, cor);
+    for (int i = 0; i < strip_1.numPixels(); i++) {
+      int cor = (posicaoCor + (i * 256 / strip_1.numPixels())) & 130;
+      strip_1.setPixelColor(i, rodaCores(cor));
+    }
+    for (int i = 0; i < strip_2.numPixels(); i++) {
+      int cor = (posicaoCor + (i * 256 / strip_2.numPixels())) & 130;
+      strip_2.setPixelColor(i, rodaCores(cor));
+    }
+    for (int i = 0; i < strip_3.numPixels(); i++) {
+      int cor = (posicaoCor + (i * 256 / strip_3.numPixels())) & 130;
+      strip_3.setPixelColor(i, rodaCores(cor));
     }
 
-    // Fita 2: aplica o efeito de onda
-    for (int i = 0; i < LED_COUNT_2; i++) {
-      uint32_t cor = Wheel((i + ondaOffset) % 255);  // Cor baseada na posição com offset
-      strip_2.setPixelColor(i, cor);
-    }
-
-    // Fita 3: aplica o efeito de onda
-    for (int i = 0; i < LED_COUNT_3; i++) {
-      uint32_t cor = Wheel((i + ondaOffset) % 255);  // Cor baseada na posição com offset
-      strip_3.setPixelColor(i, cor);
-    }
-
-    // Exibe as mudanças nas fitas de LED
     strip_1.show();
     strip_2.show();
     strip_3.show();
+
+    posicaoCor = (posicaoCor + 1) % 256;
   }
 }
 
-uint32_t Wheel(byte pos) {
-  pos = 255 - pos;
-  if (pos < 85) {
-    return strip_1.Color(255 - pos * 3, 0, pos * 3);
+void efeitoRainbowStrobo() {
+  unsigned long intervalo = 5;
+  if (millis() - ultimaTrocaRainbow >= intervalo) {
+    ultimaTrocaRainbow = millis();
+
+    for (int i = 0; i < strip_1.numPixels(); i++) {
+      int cor = (posicaoCor + (i * 256 / strip_1.numPixels())) & 130;
+      strip_1.setPixelColor(i, rodaCores(cor));
+    }
+    for (int i = 0; i < strip_2.numPixels(); i++) {
+      int cor = (posicaoCor + (i * 256 / strip_2.numPixels())) & 130;
+      strip_2.setPixelColor(i, rodaCores(cor));
+    }
+    for (int i = 0; i < strip_3.numPixels(); i++) {
+      int cor = (posicaoCor + (i * 256 / strip_3.numPixels())) & 130;
+      strip_3.setPixelColor(i, rodaCores(cor));
+    }
+
+    efeitoStrobo();
+
+    posicaoCor = (posicaoCor + 1) % 256;
   }
-  if (pos < 170) {
+}
+
+uint32_t rodaCores(byte pos) {
+  if (pos < 85) {
+    return strip_1.Color(pos * 3, 255 - pos * 3, 0);
+  } else if (pos < 170) {
     pos -= 85;
+    return strip_1.Color(255 - pos * 3, 0, pos * 3);
+  } else {
+    pos -= 170;
     return strip_1.Color(0, pos * 3, 255 - pos * 3);
   }
-  pos -= 170;
-  return strip_1.Color(pos * 3, 255 - pos * 3, 0);
 }
 
-void clearAll() {
-  strip_1.clear();
-  strip_2.clear();
-  strip_3.clear();
+void preencherLed(uint8_t r, uint8_t g, uint8_t b) {
+  for (int i = 0; i < 24; i++) {
+    strip_1.setPixelColor(i, r, g, b);
+  }
+  for (int i = 0; i < 32; i++) {
+    strip_2.setPixelColor(i, r, g, b);
+  }
+  for (int i = 0; i < 86; i++) {
+    strip_3.setPixelColor(i, r, g, b);
+  }
 
   strip_1.show();
   strip_2.show();
   strip_3.show();
+}
+
+unsigned long ultimaAtualizacao = 0;
+
+void efeitoRadar() {
+  if (millis() - ultimaAtualizacao >= 25) {
+    ultimaAtualizacao = millis();
+
+    switch (estado) {
+      case 0:
+        if (efeitoEtapa < 24) {
+          strip_1.setPixelColor(LED_COUNT_1 - 1 - efeitoEtapa, strip_1.Color(0, 130, 0));
+          strip_3.setPixelColor(LED_COUNT_3 - 1 - efeitoEtapa, strip_3.Color(0, 130, 0));
+
+          strip_1.show();
+          strip_3.show();
+          efeitoEtapa++;
+        } else {
+          efeitoEtapa = 0;
+          estado++;
+        }
+        break;
+
+      case 1:
+        if (efeitoEtapa < LED_COUNT_2 / 2) {
+          strip_2.setPixelColor(efeitoEtapa, strip_2.Color(0, 130, 0));
+          strip_2.setPixelColor(LED_COUNT_2 - 1 - efeitoEtapa, strip_2.Color(0, 130, 0));
+
+          strip_2.show();
+          efeitoEtapa++;
+        } else {
+          efeitoEtapa = 0;
+          estado++;
+        }
+        break;
+
+      case 2:
+        if (efeitoEtapa < 11) {
+          strip_3.setPixelColor(efeitoEtapa, strip_3.Color(0, 130, 0));
+          strip_3.setPixelColor(LED_COUNT_3 - 1 - (24 + efeitoEtapa), strip_3.Color(0, 130, 0));
+
+          strip_3.show();
+          efeitoEtapa++;
+        } else {
+          efeitoEtapa = 0;
+          estado++;
+        }
+        break;
+
+      case 3:
+        if (efeitoEtapa <= (50 - 11) / 2) {
+          strip_3.setPixelColor(11 + efeitoEtapa, strip_3.Color(0, 130, 0));
+          strip_3.setPixelColor(50 - efeitoEtapa, strip_3.Color(0, 130, 0));
+
+          strip_3.show();
+          efeitoEtapa++;
+        } else {
+          estado = 10;
+          efeitoEtapa = 0;
+        }
+        break;
+
+      case 10:
+        if (efeitoEtapa < 24) {
+          strip_1.setPixelColor(LED_COUNT_1 - 1 - efeitoEtapa, strip_1.Color(0, 0, 130));
+          strip_3.setPixelColor(LED_COUNT_3 - 1 - efeitoEtapa, strip_3.Color(0, 0, 130));
+
+          strip_1.show();
+          strip_3.show();
+          efeitoEtapa++;
+        } else {
+          efeitoEtapa = 0;
+          estado++;
+        }
+        break;
+
+      case 11:
+        if (efeitoEtapa < LED_COUNT_2 / 2) {
+          strip_2.setPixelColor(efeitoEtapa, strip_2.Color(0, 0, 130));
+          strip_2.setPixelColor(LED_COUNT_2 - 1 - efeitoEtapa, strip_2.Color(0, 0, 130));
+
+          strip_2.show();
+          efeitoEtapa++;
+        } else {
+          efeitoEtapa = 0;
+          estado++;
+        }
+        break;
+
+      case 12:
+        if (efeitoEtapa < 11) {
+          strip_3.setPixelColor(efeitoEtapa, strip_3.Color(0, 0, 130));
+          strip_3.setPixelColor(LED_COUNT_3 - 1 - (24 + efeitoEtapa), strip_3.Color(0, 0, 130));
+
+          strip_3.show();
+          efeitoEtapa++;
+        } else {
+          efeitoEtapa = 0;
+          estado++;
+        }
+        break;
+
+      case 13:
+        if (efeitoEtapa <= (50 - 11) / 2) {
+          strip_3.setPixelColor(11 + efeitoEtapa, strip_3.Color(0, 0, 130));
+          strip_3.setPixelColor(50 - efeitoEtapa, strip_3.Color(0, 0, 130));
+
+
+          strip_3.show();
+          efeitoEtapa++;
+        } else {
+          estado = 20;
+          efeitoEtapa = 0;
+        }
+        break;
+
+      case 20:
+        if (efeitoEtapa < 24) {
+          strip_1.setPixelColor(LED_COUNT_1 - 1 - efeitoEtapa, strip_1.Color(130, 0, 0));
+          strip_3.setPixelColor(LED_COUNT_3 - 1 - efeitoEtapa, strip_3.Color(130, 0, 0));
+
+          strip_1.show();
+          strip_3.show();
+
+          efeitoEtapa++;
+        } else {
+          efeitoEtapa = 0;
+          estado++;
+        }
+        break;
+
+      case 21:
+        if (efeitoEtapa < LED_COUNT_2 / 2) {
+          strip_2.setPixelColor(efeitoEtapa, strip_2.Color(130, 0, 0));
+          strip_2.setPixelColor(LED_COUNT_2 - 1 - efeitoEtapa, strip_2.Color(130, 0, 0));
+
+          strip_2.show();
+          efeitoEtapa++;
+        } else {
+          efeitoEtapa = 0;
+          estado++;
+        }
+        break;
+
+      case 22:
+        if (efeitoEtapa < 11) {
+          strip_3.setPixelColor(efeitoEtapa, strip_3.Color(130, 0, 0));
+          strip_3.setPixelColor(LED_COUNT_3 - 1 - (24 + efeitoEtapa), strip_3.Color(130, 0, 0));
+
+          strip_3.show();
+          efeitoEtapa++;
+        } else {
+          efeitoEtapa = 0;
+          estado++;
+        }
+        break;
+
+      case 23:
+        if (efeitoEtapa <= (50 - 11) / 2) {
+          strip_3.setPixelColor(11 + efeitoEtapa, strip_3.Color(130, 0, 0));
+          strip_3.setPixelColor(50 - efeitoEtapa, strip_3.Color(130, 0, 0));
+
+          strip_3.show();
+          efeitoEtapa++;
+        } else {
+          estado = 0;
+          efeitoEtapa = 0;
+        }
+        break;
+    }
+  }
 }
